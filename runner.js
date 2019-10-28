@@ -5,56 +5,66 @@ const flatRealtRent = require('./parsers/flatRealtRent')
 const { requestPromise } = require('./utilities')
 const Flat = require('./models/flat')
 const mongoose = require('mongoose')
+const program = require('commander');
 
-const saveFlat = data => {
-  const flat = new Flat(data)
-  return flat.save()
-    .then(() => logger.info('saved flat: ' + data.address))
-    .catch(logger.warn)
+program.option('-d, --debug', 'output extra debugging')
+
+function printProgress(progress){
+  process.stdout.clearLine();
+  process.stdout.cursorTo(0);
+  process.stdout.write(progress + '%');
 }
 
-const scrapeFlatsSale = () => {
-  const options = {
-    url: URL_REALT_BY,
-    qs: FLATS_SALE_QUERY,
-    qsStringifyOptions: {encodeValuesOnly: true, indices: false}
-  }
-  return requestPromise(options).then(response => {
-    const flats = JSON.parse(response.text()).features
-    if (!flats || !flats.length) {
-      return logger.warn('No flats where found')
-    }
+const searchForFlat = data => {
+  const {address, rooms, floor, buildingFloors, buildingType, area, areaLiving, areaKitchen, ceilHeight, yearBuilt} = data
+  return Flat.findOne({address, rooms, floor, buildingFloors, buildingType, area, areaLiving, areaKitchen, ceilHeight, yearBuilt})
+}
 
-    // extract every item one by one with delay
-    return flats.reduce((promise, flat) => {
-      const flatObject = {
-        flatId: flat.id,
-        lat: flat.geometry.coordinates[0],
-        lng: flat.geometry.coordinates[1],
-      }
-
-      return promise.then(() => {
-        return new Promise(resolve => {
-          setTimeout(resolve, 250) // delay
-        })
-          .then(() => {
-            return flatRealtSale(flat.id) // run next flat parsing
-          })
-          .then(data => {
-            return saveFlat({ ...flatObject, ...data }) // save flat
-          })
+const saveFlat = (data, found, count) => {
+  // Try to find this flat by address, floor, rooms, area etc.
+  // if this seems like a re-created posting - update, otherwise create new flat
+  return (found ? Flat.findOne({ flatId: found.flatId}) : searchForFlat(data)).then(flat => {
+    if (flat) {
+      flat.history.push({
+        date: flat.created,
+        price: flat.price,
+        priceMeter: flat.priceMeter,
+        priceMonth: flat.priceMonth,
       })
-    }, new Promise(resolve => {
-      resolve()
-    }))
+      flat.updated = Date.now()
+      flat.active = true
+      count.updated ++
+      return Object.assign(flat, data)
+    }
+    else {
+      count.created ++
+      return new Flat(data)
+    }
+  }).then(flat => {
+    return flat.save()
+      .then(() => program.debug && logger.info('saved flat: ' + data.address))
+      .catch(logger.warn)
   })
 }
 
-const scrapeFlatsRent = () => {
+const flatHasChanges = (dbFlat, realtFlat, type) => {
+  return dbFlat.lat !== realtFlat.geometry.coordinates[0]
+    || dbFlat.lng !== realtFlat.geometry.coordinates[1]
+    || dbFlat[type === 'sale' ? 'price' : 'priceMonth'] !== parseInt(realtFlat.properties.price)
+}
+
+const scrapeFlats = type => {
+  const count = {
+    scraped: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    deactivated: 0
+  }
   const options = {
     url: URL_REALT_BY,
-    qs: FLATS_RENT_QUERY,
-    qsStringifyOptions: {encodeValuesOnly: true, indices: false}
+    qs: type === 'rent' ? FLATS_RENT_QUERY : FLATS_SALE_QUERY,
+    qsStringifyOptions: { encodeValuesOnly: true, indices: false },
   }
   return requestPromise(options).then(response => {
     const flats = JSON.parse(response.text()).features
@@ -62,31 +72,62 @@ const scrapeFlatsRent = () => {
       return logger.warn('No flats where found')
     }
 
-    // extract every item one by one with delay
-    return flats.reduce((promise, flat) => {
-      const flatObject = {
-        flatId: flat.id,
-        lat: flat.geometry.coordinates[0],
-        lng: flat.geometry.coordinates[1],
-      }
+    // grab all existing Sale flat ids
+    return Flat.getFlats({ type }).then(existingFlats => {
+      let outdatedFlats = existingFlats.map(flat => flat.flatId)
+      let totalToScrap = 0
 
-      return promise.then(() => {
-        return new Promise(resolve => {
-          setTimeout(resolve, 250) // delay
+      // extract every item one by one with delayexistingFlats.find(item => item.flatId == flat.id)
+      return flats.reduce((promise, flat) => {
+        const found = existingFlats.find(item => item.flatId === flat.id)
+        // remove existing flat from the list of flats to deactivate
+        if (found) outdatedFlats = outdatedFlats.filter(flatId => flatId !== found.flatId)
+        // Parse only if flat have changed
+        if (!found || flatHasChanges(found, flat, type)) {
+          const flatObject = {
+            flatId: flat.id,
+            lat: flat.geometry.coordinates[0],
+            lng: flat.geometry.coordinates[1],
+          }
+          totalToScrap++
+
+          return promise.then(() => {
+            return new Promise(resolve => {
+              setTimeout(resolve, 500) // delay
+            })
+              .then(() => {
+                return type === 'rent' ? flatRealtRent(flat.id) : flatRealtSale(flat.id) // run next flat parsing
+              })
+              .then(data => {
+                printProgress( (100 * (count.updated + count.created) / totalToScrap).toFixed(2) )
+                return saveFlat({ ...flatObject, ...data }, found, count) // save flat
+              })
+          })
+        }
+        else {
+          count.skipped++
+        }
+
+        return promise
+
+      }, new Promise(resolve => {
+        resolve()
+      }))
+        .then(() => {
+          count.deactivated = outdatedFlats.length
+          return Flat.updateMany({flatId: outdatedFlats}, {"$set": {active: false}})
         })
-          .then(() => {
-            return flatRealtRent(flat.id) // run next flat parsing
-          })
-          .then(data => {
-            return saveFlat({ ...flatObject, ...data }) // save flat
-          })
-      })
-    }, new Promise(resolve => {
-      resolve()
-    }))
+        .then(() => {
+          logger.info('====================')
+          const report = Object.keys(count).map(key => key + ': ' + count[key]).join(' | ')
+          logger.info('TOTAL ' + type + ': ' + report)
+          return true
+        })
+
+    })
   })
 }
 
 mongoose.connect('mongodb://localhost:27017/realt', { useNewUrlParser: true, autoIndex: false })
-  .then(scrapeFlatsRent)
+  .then(() => Promise.all([scrapeFlats('rent'), scrapeFlats('sale')]))
   .then(process.exit)

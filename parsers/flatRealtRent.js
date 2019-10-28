@@ -1,14 +1,19 @@
 const logger = require('../logger')
 const { requestPromise } = require('../utilities')
-const {getAddress, getRealtUpdate, getPrice, getPriceMeter, getRooms, getFloor, getBuildingFloors, getArea, getAreaLiving,
-  getAreaKitchen, getCeilHeight, getYearBuilt, getImages, getDetails, getNotes } = require('./selectors')
+const {
+  getAddress, getRealtUpdate, getPrice, getPriceMeter, getRooms, getFloor, getBuildingFloors, getBuildingType,
+  getArea, getAreaLiving, getAreaKitchen, getFinishing, getCeilHeight, getYearBuilt, getImages, getDetails, getNotes,
+} = require('./selectors')
+const program = require('commander');
+
+program.option('-d, --debug', 'output extra debugging')
 
 const url = 'https://realt.by/rent/flat-for-long/object/:id/'
 
 const grabPage = link => {
-  logger.info('scraping flat: ' + link)
+  program.debug && logger.info('scraping flat: ' + link)
   return requestPromise(link).then($html => {
-    logger.info('scraped flat: ' + getAddress($html))
+    program.debug && logger.info('scraped flat: ' + getAddress($html))
     return {
       type: 'rent',
       address: getAddress($html),
@@ -17,9 +22,11 @@ const grabPage = link => {
       rooms: getRooms($html),
       floor: getFloor($html),
       buildingFloors: getBuildingFloors($html),
+      buildingType: getBuildingType($html),
       area: getArea($html),
       areaLiving: getAreaLiving($html),
       areaKitchen: getAreaKitchen($html),
+      finishing: getFinishing($html),
       ceilHeight: getCeilHeight($html),
       yearBuilt: getYearBuilt($html),
       images: getImages($html),

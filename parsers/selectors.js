@@ -7,9 +7,11 @@ exports.getPriceMeter = ($html) => parseFloat($html('.price-switchable').first()
 exports.getRooms = ($html) => parseInt($html('td:contains("Комнат всего/разд.")').next().text().split('/').shift()) || null
 exports.getFloor = ($html) => parseInt($html('td:contains("Этаж / этажность")').next().text().split('/').shift()) || null
 exports.getBuildingFloors = ($html) => parseInt($html('td:contains("Этаж / этажность")').next().text().split('/').pop()) || null
+exports.getBuildingType = ($html) => $html('td:contains("Тип дома")').next().text()
 exports.getArea = ($html) => parseFloat($html('td:contains("Площадь общая/жилая/кухня")').next().text().split('/')[0]) || null
 exports.getAreaLiving = ($html) => parseFloat($html('td:contains("Площадь общая/жилая/кухня")').next().text().split('/')[1]) || null
 exports.getAreaKitchen = ($html) => parseFloat($html('td:contains("Площадь общая/жилая/кухня")').next().text().split('/')[2]) || null
+exports.getFinishing = ($html) => $html('td:contains("Планировка")').next().text()
 exports.getCeilHeight = ($html) => parseFloat($html('td:contains("Высота потолков")').next().text()) || null
 exports.getYearBuilt = ($html) => parseInt($html('td:contains("Год постройки")').next().text()) || null
 exports.getImages = ($html) => ($html('.photo-item img')).map((i, img) => ({ url: $(img).attr('src') })).get()
