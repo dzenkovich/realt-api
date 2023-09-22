@@ -6,13 +6,14 @@ const { requestPromise } = require('./utilities')
 const Flat = require('./models/flat')
 const mongoose = require('mongoose')
 const program = require('commander');
+const readline = require('readline');
 
 program.option('-d, --debug', 'output extra debugging')
 
 function printProgress(progress){
-  process.stdout.clearLine();
-  process.stdout.cursorTo(0);
-  process.stdout.write(progress + '%');
+  readline.clearLine(process.stdout, 0);
+  readline.cursorTo(process.stdout, 0);
+  process.stdout.write(` ${progress}% `);
 }
 
 const searchForFlat = data => {
@@ -50,7 +51,7 @@ const saveFlat = (data, found, count) => {
 const flatHasChanges = (dbFlat, realtFlat, type) => {
   return dbFlat.lat !== realtFlat.geometry.coordinates[0]
     || dbFlat.lng !== realtFlat.geometry.coordinates[1]
-    || dbFlat[type === 'sale' ? 'price' : 'priceMonth'] !== parseInt(realtFlat.properties.price)
+    || dbFlat[type === 'sale' ? 'price' : 'priceMonth'] !== parseInt(realtFlat.properties.price.replace(/\s/g, ''))
 }
 
 const scrapeFlats = type => {
@@ -71,6 +72,7 @@ const scrapeFlats = type => {
     if (!flats || !flats.length) {
       return logger.warn('No flats where found')
     }
+    logger.info(`Fetched ${flats.length} flats for ${type}`)
 
     // grab all existing Sale flat ids
     return Flat.getFlats({ type }).then(existingFlats => {

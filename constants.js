@@ -6,7 +6,7 @@ exports.FLATS_SALE_QUERY = {
   eID: 'tx_uedbcore_mapApi',
   tid: 1,
   type: 'list',
-  hash: '5a04745164189eb4886f737535e6e288',
+  hash: '77081b60392f007dfd659f34ac928657',
   's[rooms][e][]': [1, 2, 3, 4],
   s: {
     price: {
@@ -49,7 +49,7 @@ exports.FLATS_RENT_QUERY = {
   eID: 'tx_uedbcore_mapApi',
   tid: 2001,
   type: 'list',
-  hash: '5a04745164189eb4886f737535e6e288',
+  hash: '77081b60392f007dfd659f34ac928657',
   's[rooms][e][]': [1, 2, 3, 4],
   s: {
     price: {
